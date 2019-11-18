@@ -1,3 +1,7 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/time.h>
+
 /* CMSC 432 - Homework 7
  * Assignment Name: bvfs - the BV File System
  * Due: Thursday, November 21st @ 11:59 p.m.
@@ -24,17 +28,39 @@
  *       doesn't already exist.
  */
 
+/*
+ * 16,384 blocks
+ * 256 files * 128 blocks = 32,768 blocks -- Too many
+ * 256 inodes *  
+ */
+
+//TODO double check timeval size and includes for that
+struct inode {
+  int size;
+  char filename[32];
+  timeval timestamp;
+  short references[128];
+} typedef inode;
+
 
 
 
 // Prototypes
+// TODO
 int bv_init(const char *fs_fileName);
+// TODO
 int bv_destroy();
+// TODO
 int bv_open(const char *fileName, int mode);
+// TODO
 int bv_close(int bvfs_FD);
+// TODO
 int bv_write(int bvfs_FD, const void *buf, size_t count);
+// TODO
 int bv_read(int bvfs_FD, void *buf, size_t count);
+// TODO
 int bv_unlink(const char* fileName);
+// TODO
 void bv_ls();
 
 
