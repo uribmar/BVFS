@@ -1,40 +1,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <errno.h>
 
-/* CMSC 432 - Homework 7
- * Assignment Name: bvfs - the BV File System
- * Due: Thursday, November 21st @ 11:59 p.m.
- */
+// FIXME idk what these are for but they were in his example program
+#include <sys/stat.h>
+#include <fcntl.h>
 
-
-/*
- * [Requirements / Limitations]
- *   Partition/Block info
- *     - Block Size: 512 bytes
- *     - Partition Size: 8,388,608 bytes (16,384 blocks)
- *
- *   Directory Structure:
- *     - All files exist in a single root directory
- *     - No subdirectories -- just names files
- *
- *   File Limitations
- *     - File Size: Maximum of 65,536 bytes (128 blocks)
- *     - File Names: Maximum of 32 characters including the null-byte
- *     - 256 file maximum -- Do not support more
- *
- *   Additional Notes
- *     - Create the partition file (on disk) when bv_init is called if the file
- *       doesn't already exist.
- */
-
-/*
- * 16,384 blocks
- * 256 files * 128 blocks = 32,768 blocks -- Too many
- * 256 inodes *  
- */
-
-//TODO double check timeval size and includes for that
 struct inode {
   int size;
   char filename[32];
@@ -42,8 +16,8 @@ struct inode {
   short references[128];
 } typedef inode;
 
-
-
+int fsFile;
+inode* inodes;
 
 // Prototypes
 // TODO
@@ -90,6 +64,46 @@ void bv_ls();
  *           etc.). Also, print a meaningful error to stderr prior to returning.
  */
 int bv_init(const char *fs_fileName) {
+  // Get partition name from command line argument
+  fsFile = open(fs_fileName, O_CREAT | O_RDWR | O_EXCL, 0644);
+  if (fsFile < 0 && errno == EEXIST) {
+    // File already exists. Open it and read info
+    // TODO read in inodes
+    // TODO read in superblock
+    fsFile = open(partitionName, O_CREAT | O_RDWR , S_IRUSR | S_IWUSR);
+  }
+  else if (fsFile < 0){
+    // Something bad occurred. Just print the error
+    printf("%s", strerror(errno));
+    return -1;
+  }
+  else {
+    // File did not previously exist but it does now. Write data to it
+    // write empty inodes by setting their size to 0
+    int size = 0;
+    int lastBlock = 512*16383;
+    for(int i=0; i<256; i++) {
+      lseek(fsFile, i*512, SEEK_SET);
+      write(fsFile, (void*)&size, sizeof(int));
+    }
+
+    // TODO write superblock pointers
+    lseek(fsFile, 256*512, SEEK_SET);
+    write(fsFile, (void*)&lastBlock, sizeof(int));
+    for(int i= 16383*512; i>257*512; i-=512) {
+      lastBlock = i-512;
+      lseek(fsFile, i, SEEK_SET);
+      write(fsFile, (void*)&lastBlock, sizeof(int));
+    }
+    int lastBlock = 0;
+    lseek(fsFile, 257*512, SEEK_SET);
+    write(fsFile, (void*)&lastBlock, sizeof(int));
+
+    // TODO set things in memory that need to be set
+    // TODO set pointer in each block on disk
+  }
+
+  return 0;
 }
 
 
