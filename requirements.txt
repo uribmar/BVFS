@@ -1,0 +1,31 @@
+/* CMSC 432 - Homework 7
+ * Assignment Name: bvfs - the BV File System
+ * Due: Thursday, November 21st @ 11:59 p.m.
+ */
+
+
+/*
+ * [Requirements / Limitations]
+ *   Partition/Block info
+ *     - Block Size: 512 bytes
+ *     - Partition Size: 8,388,608 bytes (16,384 blocks)
+ *
+ *   Directory Structure:
+ *     - All files exist in a single root directory
+ *     - No subdirectories -- just names files
+ *
+ *   File Limitations
+ *     - File Size: Maximum of 65,536 bytes (128 blocks)
+ *     - File Names: Maximum of 32 characters including the null-byte
+ *     - 256 file maximum -- Do not support more
+ *
+ *   Additional Notes
+ *     - Create the partition file (on disk) when bv_init is called if the file
+ *       doesn't already exist.
+ */
+
+/*
+ * 16,384 blocks
+ * 256 files * 128 blocks = 32,768 blocks -- Too many
+ * 256 inodes *  
+ */
