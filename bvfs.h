@@ -328,7 +328,7 @@ int bv_open(const char *fileName, int mode) {
   int inodeIndex;
   for(int i=0; i<256; i++) {
     if(strcmp(inodes[i].filename, fileName) == 0 && inodes[i].size != -1) {
-      found = 0;
+      found = 1;
       inodeIndex = i;
       break;
     }
@@ -339,6 +339,7 @@ int bv_open(const char *fileName, int mode) {
     fdTable[fd].file = inodes+inodeIndex;
     fdTable[fd].mode = mode;
     if(mode == BV_WTRUNC) {
+      //TODO delete the file and get a new one
       //find the number of blocks
       int numBlocks = (fdTable[fd].file->size/512)+1;
       if(fdTable[fd].file->size%512 == 0) {
