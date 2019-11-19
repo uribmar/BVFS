@@ -6,9 +6,6 @@
 #include <errno.h>
 #include <string.h>
 
-// FIXME idk what these are for but they were in his example program
-#include <sys/stat.h>
-#include <fcntl.h>
 
 struct inode {
   int size;
@@ -16,6 +13,7 @@ struct inode {
   timeval timestamp;
   short references[128];
 } typedef inode;
+
 
 struct fileDescriptor {
   int cursor;
@@ -301,23 +299,40 @@ int bv_open(const char *fileName, int mode) {
   }
 
   if(found) {
-    //TODO handle read
-    if(mode == BV_RDONLY) {
+    int fd = getFD();
+    fdTable[fd].file = inodes+inodeIndex;
+    fdTable[fd].mode = mode;
+    if(mode == BV_WTRUNC) {
+      //find the number of blocks
+      int numBlocks = (fdTable[fd].file->size/512)+1;
+      if(fdTable[fd].file->size%512 == 0) {
+        numBlocks--;
+      }
+
+      //work backwards to set block equal to each other
+      for(int i=numBlocks-1; i>0; i--) {
+        lseek(fsFile, fdTable[fd].file->references[i]*512, SEEK_SET);
+        write(fsFile, (void*)&freeNode, sizeof(int));
+        freeNode = fdTable[fd].file->references[i]*512;
+      }
+
+      //set the size of the inode to 0
+      fdTable[fd].file->size = 0;
     }
-    //TODO handle overwrite
-    else if(mode == BV_WTRUNC) {
+    else if(mode == BV_WCONCAT) {
+      //TODO set the cursor to the proper location
     }
-    //TODO handle append
-    else {
-    }
+    return fd;
   }
   else if(mode == BV_RDONLY) {
     fprintf(stderr, "file '%s' does not exist for reading", fileName);
     return -1;
   }
   else {
+    int fd = getFD();
     //TODO find an empty inode
     //TODO set its size to -1 to make sure its file descriptor doesn't get taken
+    return fd;
   }
 }
 
