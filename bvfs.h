@@ -185,6 +185,28 @@ void freeBlock(int index) {
   write(fsFile, (void*)freeNode, sizeof(int));
 }
 
+int getNewFile() {
+  int found = 0;
+  int index;
+
+  //look for a free inode
+  for(int i=0; i<256; i++) {
+    if(inodes[i].size == -1) {
+      found = 1;
+      index = i;
+      break;
+    }
+  }
+
+  if(found) {
+    inodes[i].size = 0;
+    return index;
+  }
+  else {
+    return -1;
+  }
+}
+
 
 /*
  * int bv_init(const char *fs_fileName);
