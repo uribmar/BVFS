@@ -225,7 +225,7 @@ int bv_init(const char *fs_fileName) {
   else {
     // File did not previously exist but it does now. Write data to it
     inode tempNode;
-    tempNode.size = 0;
+    tempNode.size = -1;
     int lastBlock = 512*16383;
 
     // write empty inodes by setting their size to 0
@@ -327,7 +327,7 @@ int bv_open(const char *fileName, int mode) {
   int found = 0;
   int inodeIndex;
   for(int i=0; i<256; i++) {
-    if(strcmp(inodes[i].filename, fileName) == 0 && inodes[i].size != 0) {
+    if(strcmp(inodes[i].filename, fileName) == 0 && inodes[i].size != -1) {
       found = 0;
       inodeIndex = i;
       break;
