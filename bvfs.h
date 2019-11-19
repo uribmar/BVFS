@@ -19,6 +19,7 @@ struct inode {
 
 struct fileDescriptor {
   int cursor;
+  int mode;
   inode* file;
 } typedef fileDescriptor;
 
@@ -38,7 +39,6 @@ int fdSize;
 int fdCapacity;
 
 // Prototypes
-// TODO
 int bv_init(const char *fs_fileName);
 // TODO
 int bv_destroy();
@@ -54,6 +54,7 @@ int bv_read(int bvfs_FD, void *buf, size_t count);
 int bv_unlink(const char* fileName);
 // TODO
 void bv_ls();
+
 
 void debug() {
   for(int i=0; i<256; i++) {
@@ -79,6 +80,7 @@ void debug() {
   }
 }
 
+
 void initGlobals() {
   //read all of the inodes
   inodes = (inode*)malloc(256*sizeof(inode));
@@ -95,16 +97,58 @@ void initGlobals() {
   fdTable = (fileDescriptor*)malloc(8*sizeof(fileDescriptor));
   fdSize = 0;
   fdCapacity = 8;
+  for(int i=0; i<fdCapacity; i++) {
+    fdTable[i].cursor = -1;
+  }
 }
 
 void growfdTable() {
+  //make a new table with a higher capacity
   fdCapacity *= 2;
   fileDescriptor* newTable = (fileDescriptor*)malloc(fdCapacity*sizeof(fileDescriptor));
+
+  //copy data over to the new table
   for(int i=0; i<fdSize; i++) {
     newTable[i] = fdTable[i];
   }
+
+  //populate the rest of the table with empty descriptors
+  for(int i=fdSize; i<fdCapacity; i++) {
+    newTable[i].cursor = -1;
+  }
+
+  //delete the old table and set new new table as the table to use;
   free(fdTable);
   fdTable = newTable;
+}
+
+int getFD() {
+  if(fdSize == fdCapacity) {
+    //grow the table and return the fd at index size
+    growfdTable();
+    fdTable[fdSize].cursor = 0;
+    return fdSize++;
+  }
+  else {
+    //look for the first empty fd
+    for(int i=0; i<fdCapacity; i++) {
+      if(fdTable[i].cursor == -1) {
+        fdTable[i].cursor = 0;
+        fdSize++;
+        return i;
+      }
+    }
+  }
+}
+
+void closeFD(int index) {
+  if(index < 0 || index > fdCapacity) {
+    return;
+  }
+  else if(fdTable[index].cursor != -1) {
+    fdTable[index].cursor = -1;
+    fdSize--;
+  }
 }
 
 
@@ -236,6 +280,45 @@ int BV_WTRUNC = 2;
  *           stderr prior to returning.
  */
 int bv_open(const char *fileName, int mode) {
+  //deal with long file names
+  if(strlen(fileName) > 31) {
+    fprintf(stderr,"file name '%s' too long for open\n", fileName);
+    return -1;
+  }
+  else if(mode < 0 || mode > 2) {
+    fprintf(stderr,"invalid mode for open\n");
+    return -1;
+  }
+
+  int found = 0;
+  int inodeIndex;
+  for(int i=0; i<256; i++) {
+    if(strcmp(inodes[i].filename, fileName) == 0 && inodes[i].size != 0) {
+      found = 0;
+      inodeIndex = i;
+      break;
+    }
+  }
+
+  if(found) {
+    //TODO handle read
+    if(mode == BV_RDONLY) {
+    }
+    //TODO handle overwrite
+    else if(mode == BV_WTRUNC) {
+    }
+    //TODO handle append
+    else {
+    }
+  }
+  else if(mode == BV_RDONLY) {
+    fprintf(stderr, "file '%s' does not exist for reading", fileName);
+    return -1;
+  }
+  else {
+    //TODO find an empty inode
+    //TODO set its size to -1 to make sure its file descriptor doesn't get taken
+  }
 }
 
 
@@ -261,6 +344,9 @@ int bv_open(const char *fileName, int mode) {
  *           prior to returning.
  */
 int bv_close(int bvfs_FD) {
+  //TODO look for the file in the file descriptors page
+  //TODO see if the file has been written to at all (size of inode != -1)
+  //TODO remove from file descriptor table
 }
 
 
