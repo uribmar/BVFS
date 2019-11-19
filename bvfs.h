@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <errno.h>
+#include <string.h>
 
 // FIXME idk what these are for but they were in his example program
 #include <sys/stat.h>
@@ -16,8 +17,25 @@ struct inode {
   short references[128];
 } typedef inode;
 
+struct fileDescriptor {
+  int cursor;
+  inode* file;
+} typedef fileDescriptor;
+
+
+//the file descriptor for the file serving as the file system
 int fsFile;
+
+//an array of inodes
 inode* inodes;
+
+//the free node pointed to by the superblock
+int freeNode;
+
+//file descriptor table and the information needed for it
+fileDescriptor* fdTable;
+int fdSize;
+int fdCapacity;
 
 // Prototypes
 // TODO
@@ -37,7 +55,41 @@ int bv_unlink(const char* fileName);
 // TODO
 void bv_ls();
 
+void initGlobals() {
+  //read all of the inodes
+  inodes = (inode*)malloc(256*sizeof(inode));
+  for(int i=0; i<256; i++) {
+  lseek(fsFile, i*512, SEEK_SET);
+  read(fsFile, (void*)(inodes+i), sizeof(inode));
+  }
 
+  //read whatever the suoerblock points to
+  lseek(fsFile, 256*512, SEEK_SET);
+  read(fsFile, (void*)&freeNode, sizeof(int));
+
+  //set up the file descriptor table
+  fdTable = (fileDescriptor*)malloc(8*sizeof(fileDescriptor));
+  fdSize = 0;
+  fdCapacity = 8;
+
+  //FIXME remove debug
+  for(int i=0; i<256; i++) {
+    printf("%d: %d\n", i, inodes[i].size);
+  }
+  printf("Freenode at: %d\n", freeNode);
+  printf("fdcapcity: %d\n", fdCapacity);
+  printf("fdsize: %d\n", fdSize);
+}
+
+void growfdTable() {
+  fdCapacity *= 2;
+  fileDescriptor* newTable = (fileDescriptor*)malloc(fdCapacity*sizeof(fileDescriptor));
+  for(int i=0; i<fdSize; i++) {
+    newTable[i] = fdTable[i];
+  }
+  free(fdTable);
+  fdTable = newTable;
+}
 
 
 /*
@@ -68,9 +120,8 @@ int bv_init(const char *fs_fileName) {
   fsFile = open(fs_fileName, O_CREAT | O_RDWR | O_EXCL, 0644);
   if (fsFile < 0 && errno == EEXIST) {
     // File already exists. Open it and read info
-    // TODO read in inodes
-    // TODO read in superblock
-    fsFile = open(partitionName, O_CREAT | O_RDWR , S_IRUSR | S_IWUSR);
+    fsFile = open(fs_fileName, O_CREAT | O_RDWR , S_IRUSR | S_IWUSR);
+    initGlobals();
   }
   else if (fsFile < 0){
     // Something bad occurred. Just print the error
@@ -79,28 +130,31 @@ int bv_init(const char *fs_fileName) {
   }
   else {
     // File did not previously exist but it does now. Write data to it
-    // write empty inodes by setting their size to 0
     int size = 0;
     int lastBlock = 512*16383;
+
+    // write empty inodes by setting their size to 0
     for(int i=0; i<256; i++) {
       lseek(fsFile, i*512, SEEK_SET);
       write(fsFile, (void*)&size, sizeof(int));
     }
 
-    // TODO write superblock pointers
+    // write superblock pointer
     lseek(fsFile, 256*512, SEEK_SET);
     write(fsFile, (void*)&lastBlock, sizeof(int));
+
+    //write pointers for each block to the one before it
+    //the block closest to the superblock points to null
     for(int i= 16383*512; i>257*512; i-=512) {
       lastBlock = i-512;
       lseek(fsFile, i, SEEK_SET);
       write(fsFile, (void*)&lastBlock, sizeof(int));
     }
-    int lastBlock = 0;
+    lastBlock = 0;
     lseek(fsFile, 257*512, SEEK_SET);
     write(fsFile, (void*)&lastBlock, sizeof(int));
 
-    // TODO set things in memory that need to be set
-    // TODO set pointer in each block on disk
+    initGlobals();
   }
 
   return 0;
