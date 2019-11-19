@@ -150,6 +150,42 @@ void closeFD(int index) {
 }
 
 
+short getBlock() {
+  int retBlock = freeNode;
+
+  //0 means that there is no more free blocks
+  //if we're at 0:
+  //  we want to return 0
+  //  we don't want to read in whatever garbage is at 0
+  if(freeNode != 0) {
+    //write to the free node
+    lseek(fsFile, freeNode, SEEK_SET);
+    read(fsFile, (void*)&freeNode, sizeof(int));
+
+    //write the new free node to the superblock
+    lseek(fsFile, 256*512, SEEK_SET);
+    write(fsFile,(void*)&freeNode,sizeof(int));
+  }
+
+  return (short)(retBlock/512);
+}
+
+void freeBlock(int index) {
+  //index should be the index of the block.
+  //NOT the offset in the file
+  int fileOffset = index*512;
+
+  //set the new free node up at its offset
+  lseek(fsFile, fileOffset, SEEK_SET);
+  write(fsFile, (void*)&freeNode, sizeof(int));
+  freeNode = fileOffset;
+
+  //set the new freeNode in the superBlock
+  lseek(fsFile, 256*512, SEEK_SET);
+  write(fsFile, (void*)freeNode, sizeof(int));
+}
+
+
 /*
  * int bv_init(const char *fs_fileName);
  *
@@ -310,6 +346,7 @@ int bv_open(const char *fileName, int mode) {
       }
 
       //work backwards to set block equal to each other
+      //TODO modify to use freeBlock function
       for(int i=numBlocks-1; i>0; i--) {
         lseek(fsFile, fdTable[fd].file->references[i]*512, SEEK_SET);
         write(fsFile, (void*)&freeNode, sizeof(int));
