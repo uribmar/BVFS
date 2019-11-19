@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
+#include <fcntl.h>
 
 
 struct inode {
@@ -182,7 +183,7 @@ void freeBlock(int index) {
 
   //set the new freeNode in the superBlock
   lseek(fsFile, 256*512, SEEK_SET);
-  write(fsFile, (void*)freeNode, sizeof(int));
+  write(fsFile, (void*)&freeNode, sizeof(int));
 }
 
 int getNewFile() {
@@ -199,7 +200,7 @@ int getNewFile() {
   }
 
   if(found) {
-    inodes[i].size = 0;
+    inodes[index].size = 0;
     return index;
   }
   else {
@@ -298,7 +299,7 @@ int bv_init(const char *fs_fileName) {
 int bv_destroy() {
   //write all of the inodes to file
   for(int i=0; i<256; i++) {
-    lseek(fsFile, i*512; SEEK_SET);
+    lseek(fsFile, i*512, SEEK_SET);
     write(fsFile, (void*)(inodes+i), sizeof(inode));
   }
 
@@ -524,8 +525,8 @@ int bv_unlink(const char* fileName) {
 
   if(found) {
     //find the number of blocks
-    int numBlocks = (fdTable[fd].file->size/512)+1;
-    if(fdTable[fd].file->size%512 == 0) {
+    int numBlocks = (inodes[inodeIndex].size/512)+1;
+    if(inodes[inodeIndex].size%512 == 0) {
       numBlocks--;
     }
 
@@ -535,7 +536,7 @@ int bv_unlink(const char* fileName) {
     }
 
     //set the size to -1
-    inodes[i].size = -1;
+    inodes[inodeIndex].size = -1;
 
     return 0;
   }
