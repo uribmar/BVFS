@@ -198,7 +198,7 @@ int bv_init(const char *fs_fileName) {
 int bv_destroy() {
   close(fsFile);
   free(inodes);
-  free(fdTables);
+  free(fdTable);
   return 0;
 }
 
