@@ -196,6 +196,10 @@ int bv_init(const char *fs_fileName) {
  *           returning.
  */
 int bv_destroy() {
+  close(fsFile);
+  free(inodes);
+  free(fdTables);
+  return 0;
 }
 
 
