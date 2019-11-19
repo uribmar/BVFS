@@ -296,7 +296,16 @@ int bv_init(const char *fs_fileName) {
  *           returning.
  */
 int bv_destroy() {
+  //write all of the inodes to file
+  for(int i=0; i<256; i++) {
+    lseek(fsFile, i*512; SEEK_SET);
+    write(fsFile, (void*)(inodes+i), sizeof(inode));
+  }
+
+  //close the partition file
   close(fsFile);
+
+  //free the rest of the data
   free(inodes);
   free(fdTable);
   return 0;
@@ -497,6 +506,43 @@ int bv_read(int bvfs_FD, void *buf, size_t count) {
  *           Also, print a meaningful error to stderr prior to returning.
  */
 int bv_unlink(const char* fileName) {
+  //deal with long file names
+  if(strlen(fileName) > 31) {
+    fprintf(stderr,"file name '%s' too long for open\n", fileName);
+    return -1;
+  }
+
+  int found = 0;
+  int inodeIndex;
+  for(int i=0; i<256; i++) {
+    if(strcmp(inodes[i].filename, fileName) == 0 && inodes[i].size != -1) {
+      found = 1;
+      inodeIndex = i;
+      break;
+    }
+  }
+
+  if(found) {
+    //find the number of blocks
+    int numBlocks = (fdTable[fd].file->size/512)+1;
+    if(fdTable[fd].file->size%512 == 0) {
+      numBlocks--;
+    }
+
+    //free the blocks
+    for(int i=0; i<numBlocks; i++) {
+      freeBlock(inodes[inodeIndex].references[i]);
+    }
+
+    //set the size to -1
+    inodes[i].size = -1;
+
+    return 0;
+  }
+  else {
+    fprintf(stderr,"file name '%s' does not exist\n", fileName);
+    return -1;
+  }
 }
 
 
