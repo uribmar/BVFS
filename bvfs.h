@@ -72,7 +72,7 @@ void debug() {
       printf("good: %d\n", temp);
     }
     else {
-      printf("VERY VERY BAD\n");
+      printf("VERY, VERY BAD\n");
       printf("%d %d\n", i, temp);
     }
     i = temp;
@@ -83,11 +83,11 @@ void initGlobals() {
   //read all of the inodes
   inodes = (inode*)malloc(256*sizeof(inode));
   for(int i=0; i<256; i++) {
-  lseek(fsFile, i*512, SEEK_SET);
-  read(fsFile, (void*)(inodes+i), sizeof(inode));
+    lseek(fsFile, i*512, SEEK_SET);
+    read(fsFile, (void*)(inodes+i), sizeof(inode));
   }
 
-  //read whatever the suoerblock points to
+  //read whatever the superblock points to
   lseek(fsFile, 256*512, SEEK_SET);
   read(fsFile, (void*)&freeNode, sizeof(int));
 
@@ -152,7 +152,6 @@ int bv_init(const char *fs_fileName) {
 
     // write empty inodes by setting their size to 0
     for(int i=0; i<256; i++) {
-      tempNode.references[2] = i;
       lseek(fsFile, i*512, SEEK_SET);
       write(fsFile, (void*)&tempNode, sizeof(inode));
     }
