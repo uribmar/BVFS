@@ -55,6 +55,30 @@ int bv_unlink(const char* fileName);
 // TODO
 void bv_ls();
 
+void debug() {
+  for(int i=0; i<256; i++) {
+    printf("%d: %d : %d\n", i, inodes[i].size, inodes[i].references[2]);
+  }
+  printf("Freenode at: %d\n", freeNode);
+  printf("fdcapcity: %d\n", fdCapacity);
+  printf("fdsize: %d\n", fdSize);
+
+  int i=freeNode;
+  int temp;
+  while(i!=0) {
+    lseek(fsFile, i, SEEK_SET);
+    read(fsFile, (void*)&temp, sizeof(int));
+    if( i-512 == temp) {
+      printf("good: %d\n", temp);
+    }
+    else {
+      printf("VERY VERY BAD\n");
+      printf("%d %d\n", i, temp);
+    }
+    i = temp;
+  }
+}
+
 void initGlobals() {
   //read all of the inodes
   inodes = (inode*)malloc(256*sizeof(inode));
@@ -71,14 +95,6 @@ void initGlobals() {
   fdTable = (fileDescriptor*)malloc(8*sizeof(fileDescriptor));
   fdSize = 0;
   fdCapacity = 8;
-
-  //FIXME remove debug
-  for(int i=0; i<256; i++) {
-    printf("%d: %d\n", i, inodes[i].size);
-  }
-  printf("Freenode at: %d\n", freeNode);
-  printf("fdcapcity: %d\n", fdCapacity);
-  printf("fdsize: %d\n", fdSize);
 }
 
 void growfdTable() {
@@ -130,13 +146,15 @@ int bv_init(const char *fs_fileName) {
   }
   else {
     // File did not previously exist but it does now. Write data to it
-    int size = 0;
+    inode tempNode;
+    tempNode.size = 0;
     int lastBlock = 512*16383;
 
     // write empty inodes by setting their size to 0
     for(int i=0; i<256; i++) {
+      tempNode.references[2] = i;
       lseek(fsFile, i*512, SEEK_SET);
-      write(fsFile, (void*)&size, sizeof(int));
+      write(fsFile, (void*)&tempNode, sizeof(inode));
     }
 
     // write superblock pointer
