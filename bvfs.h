@@ -7,6 +7,8 @@
 #include <string.h>
 #include <fcntl.h>
 
+//TODOneed to deal with timestamps in this whole motherfucker
+
 
 struct inode {
   int size;
@@ -380,6 +382,7 @@ int bv_open(const char *fileName, int mode) {
         return -1;
       }
       fdTable[fd].file = inodes+getNewFile();
+      //TODO set fileName
     }
     else if(mode == BV_WCONCAT) {
       //set the cursor to the proper location
@@ -393,8 +396,10 @@ int bv_open(const char *fileName, int mode) {
   }
   else {
     int fd = getFD();
-    //TODO find an empty inode
-    //TODO set its size to -1 to make sure its file descriptor doesn't get taken
+    int inodeID = getNewFile();
+    fdTable[fd].file = inodes+inodeID;
+    fdTable[fd].mode = mode;
+    //TODO set filename
     return fd;
   }
 }
