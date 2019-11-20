@@ -455,7 +455,6 @@ int bv_close(int bvfs_FD) {
  */
 int bv_write(int bvfs_FD, const void *buf, size_t count) {
   fileDescriptor* fd = getFDByID(bvfs_FD);
-  printf("%d\n", fd->file->size);
 
   //check for fails
   if(fd == NULL) {
@@ -498,7 +497,7 @@ int bv_write(int bvfs_FD, const void *buf, size_t count) {
 
     //find the offsetof the cursor in the file
     int absolute = fd->cursor/512;
-    absolute = fd->file->references[absolute]*512 + fd->cursor%512;
+    absolute = (fd->file->references[absolute]*512) + (fd->cursor%512);
 
     //seek to that position
     //write the size of the block
@@ -509,12 +508,12 @@ int bv_write(int bvfs_FD, const void *buf, size_t count) {
     amountWritten += blockSizeRemaining;
     countRemaining -= blockSizeRemaining;
 
-    // set the cursor position in the file descriptor
-    fd->cursor += blockSizeRemaining;
-    blockSizeRemaining = 512-fd->cursor%512;
-
     //increase the size of the file in the inode
     fd->file->size += blockSizeRemaining;
+
+    // set the cursor position in the file descriptor
+    fd->cursor += blockSizeRemaining;
+    blockSizeRemaining = 512 - (fd->cursor%512);
 
     if(countRemaining > 0){
       // Get another block to write to
@@ -527,8 +526,9 @@ int bv_write(int bvfs_FD, const void *buf, size_t count) {
       fd->file->references[fd->file->size/512] = newBlock;
     }
   }
-  if(countRemaining == 0)
+  if(countRemaining == 0) {
     return amountWritten;
+  }
   else {
     // We need to write the final bytes from the buffer as well
     // just this time they fit
