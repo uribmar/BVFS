@@ -43,9 +43,7 @@ int fdCapacity;
 int bv_init(const char *fs_fileName);
 // TODO
 int bv_destroy();
-// TODO
 int bv_open(const char *fileName, int mode);
-// TODO
 int bv_close(int bvfs_FD);
 // TODO
 int bv_write(int bvfs_FD, const void *buf, size_t count);
@@ -456,19 +454,30 @@ int bv_close(int bvfs_FD) {
  *           prior to returning.
  */
 int bv_write(int bvfs_FD, const void *buf, size_t count) {
-  
   fileDescriptor* fd = getFDByID(bvfs_FD);
 
-  // The file is too large. Whoops.
-  if (fd->file->size + count > 128*512) {
-    fprintf(stderr, "file %s attempted to write over the max file size", fd->file->filename); 
+  //check for fails
+  if(fd == NULL) {
+    fprintf(stderr, "File descriptor %d is invalid\n", bvfs_FD);
+    return -1;
+  }
+  else if(fd->cursor == -1) {
+    fprintf(stderr, "File descriptor %d is not open\n", bvfs_FD);
+    return -1;
+  }
+  else if(fd->mode != BV_RDONLY) {
+    fprintf(stderr, "File descriptor %d is not open in read mode\n", bvfs_FD);
+    return -1;
+  }
+  else if (fd->file->size + count > 128*512) {
+    fprintf(stderr, "file %s attempted to write over the max file size\n", fd->file->filename); 
     return -1;
   }
 
+  int amountWritten = 0;
   int countRemaining = count;
   int blockSizeRemaining = 512 - fd->cursor%512;
 
-  int amountWritten = 0;
 
   // Write the remaining size of the block
   // subtract it from the count remaining
@@ -476,33 +485,61 @@ int bv_write(int bvfs_FD, const void *buf, size_t count) {
   // Do this while the amount to write is 
   // bigger than the space remaining
   while (blockSizeRemaining < countRemaining) {
+    if(fd->file->size == 0) {
+      //allocate a new block if the file size was 0
+      short newBlock = getBlock();
+      if(newBlock == 0) {
+        fprintf(stderr, "Cannot allocate new blocks on disk\n");
+        return amountWritten;
+      }
+      fd->file->references[0] = newBlock;
+    }
+
+    //find the offsetof the cursor in the file
     int absolute = fd->cursor/512;
     absolute = fd->file->references[absolute]*512 + fd->cursor%512;
 
+    //seek to that position
+    //write the size of the block
     lseek(fsFile, absolute, SEEK_SET); 
     write(fsFile, buf+amountWritten, blockSizeRemaining);
 
+    //reduce the remaining count and increase the number of bytes we wrote
     amountWritten += blockSizeRemaining;
-
     countRemaining -= blockSizeRemaining;
-    // set the cursor
+
+    // set the cursor position in the file descriptor
     fd->cursor += blockSizeRemaining;
     blockSizeRemaining = 512-fd->cursor%512;
 
-    // Get another block to write to
-    short newBlock = getBlock();
-    fd->file->references[fd->file->size/512] = newBlock;
+    //increase the size of the file in the inode
     fd->file->size += blockSizeRemaining;
-  }
-  // We need to write the final bytes from the buffer as well
-  // just this time they fit
-  int absolute = fd->cursor/512;
-  absolute = fd->file->references[absolute]*512 + fd->cursor%512;
-  lseek(fsFile, absolute, SEEK_SET); 
 
-  write(fsFile, buf+amountWritten, countRemaining);
-  fd->cursor += countRemaining;
-  fd->file->size += countRemaining;
+    if(countRemaining > 0){
+      // Get another block to write to
+      short newBlock = getBlock();
+      if(newBlock == 0) {
+        fprintf(stderr, "Cannot allocate new blocks on disk\n");
+        return amountWritten;
+      }
+
+      fd->file->references[fd->file->size/512] = newBlock;
+    }
+  }
+  if(countRemaining == 0)
+    return amountWritten;
+  else {
+    // We need to write the final bytes from the buffer as well
+    // just this time they fit
+    int absolute = fd->cursor/512;
+    absolute = fd->file->references[absolute]*512 + fd->cursor%512;
+    lseek(fsFile, absolute, SEEK_SET); 
+
+    write(fsFile, buf+amountWritten, countRemaining);
+    fd->cursor += countRemaining;
+    fd->file->size += countRemaining;
+    return amountWritten + countRemaining;
+  }
 }
 
 
