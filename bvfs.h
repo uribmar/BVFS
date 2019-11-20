@@ -142,6 +142,14 @@ int getFD() {
   }
 }
 
+fileDescriptor* getFDByID(int ID) {
+  for (int i=0; i<fdCapacity; i++) {
+    if (fdTable[i] == ID)
+      return &fdTable[i];
+  }
+  return NULL;
+}
+
 void closeFD(int index) {
   if(index < 0 || index > fdCapacity) {
     return;
@@ -281,10 +289,6 @@ int bv_init(const char *fs_fileName) {
 }
 
 
-
-
-
-
 /*
  * int bv_destroy();
  *
@@ -313,11 +317,6 @@ int bv_destroy() {
   free(fdTable);
   return 0;
 }
-
-
-
-
-
 
 
 // Available Modes for bvfs (see bv_open below)
@@ -406,9 +405,6 @@ int bv_open(const char *fileName, int mode) {
 
 
 
-
-
-
 /*
  * int bv_close(int bvfs_FD);
  *
@@ -434,10 +430,6 @@ int bv_close(int bvfs_FD) {
 
 
 
-
-
-
-
 /*
  * int bv_write(int bvfs_FD, const void *buf, size_t count);
  *
@@ -456,10 +448,54 @@ int bv_close(int bvfs_FD) {
  *           prior to returning.
  */
 int bv_write(int bvfs_FD, const void *buf, size_t count) {
+  
+  fileDescriptor* fd = getFDByID(bvfs_FD);
+
+  // The file is too large. Whoops.
+  if (fd->file->size + count > 128*512) {
+    fprintf(stderr, "file %s attempted to write over the max file size", fd->file->filename); 
+    return -1;
+  }
+
+  int countRemaining = count;
+  int blockSizeRemaining = 512 - fd->cursor%512;
+
+  int amountWritten = 0;
+
+  // Write the remaining size of the block
+  // subtract it from the count remaining
+  //
+  // Do this while the amount to write is 
+  // bigger than the space remaining
+  while (blockSizeRemaining < countRemaining) {
+    int absolute = fd->cursor/512;
+    absolute = fd->references[absolute]*512 + fd->cursor%512;
+
+    lseek(fsFile, absolute, SEEK_SET); 
+    write(fsFile, buf+amountWritten, blockSizeRemaining);
+
+    amountWritten += blockSizeRemaining;
+
+    countRemaining -= blockSizeRemaining;
+    // set the cursor
+    fd->cursor += blockSizeRemaining;
+    blockSizeRemaining = 512-fd->cursor%512;
+
+    // Get another block to write to
+    short newBlock = getBlock();
+    fd->references[size/512] = newBlock;
+    fd->file->size += blockSizeRemaining;
+  }
+  // We need to write the final bytes from the buffer as well
+  // just this time they fit
+  int absolute = fd->cursor/512;
+  absolute = fd->references[absolute]*512 + fd->cursor%512;
+  lseek(fsFile, absolute, SEEK_SET); 
+
+  write(fsFile, buf+amountWritten, countRemaining);
+  fd->cursor += countRemaining;
+  fd->file->size += countRemaining;
 }
-
-
-
 
 
 
@@ -482,10 +518,6 @@ int bv_write(int bvfs_FD, const void *buf, size_t count) {
  */
 int bv_read(int bvfs_FD, void *buf, size_t count) {
 }
-
-
-
-
 
 
 
@@ -544,10 +576,6 @@ int bv_unlink(const char* fileName) {
     return -1;
   }
 }
-
-
-
-
 
 
 
