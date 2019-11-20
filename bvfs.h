@@ -455,6 +455,7 @@ int bv_close(int bvfs_FD) {
  */
 int bv_write(int bvfs_FD, const void *buf, size_t count) {
   fileDescriptor* fd = getFDByID(bvfs_FD);
+  printf("%d\n", fd->file->size);
 
   //check for fails
   if(fd == NULL) {
@@ -465,7 +466,7 @@ int bv_write(int bvfs_FD, const void *buf, size_t count) {
     fprintf(stderr, "File descriptor %d is not open\n", bvfs_FD);
     return -1;
   }
-  else if(fd->mode != BV_RDONLY) {
+  else if(fd->mode == BV_RDONLY) {
     fprintf(stderr, "File descriptor %d is not open in read mode\n", bvfs_FD);
     return -1;
   }
@@ -582,7 +583,6 @@ int bv_read(int bvfs_FD, void *buf, size_t count) {
 
   int bytesRead = 0;
   int bytesLeftToRead = count;
-  int bufIndex = 0;
 
 
   while(bytesLeftToRead != 0) {
@@ -598,7 +598,7 @@ int bv_read(int bvfs_FD, void *buf, size_t count) {
       bytesToRead = bytesLeftInBlock;
 
     //move to position and read
-    int offset = fd->file->references[currBlockRef]*512;
+    int offset = fd->file->references[currBlockRef]*512 + fd->cursor%512;
     lseek(fsFile, offset, SEEK_SET);
     read(fsFile, buf+bytesRead, bytesToRead);
 
