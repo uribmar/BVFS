@@ -5,10 +5,10 @@
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
-
-// FIXME idk what these are for but they were in his example program
-#include <sys/stat.h>
 #include <fcntl.h>
+
+//TODOneed to deal with timestamps in this whole motherfucker
+
 
 struct inode {
   int size;
@@ -17,8 +17,10 @@ struct inode {
   short references[128];
 } typedef inode;
 
+
 struct fileDescriptor {
   int cursor;
+  int mode;
   inode* file;
 } typedef fileDescriptor;
 
@@ -38,7 +40,6 @@ int fdSize;
 int fdCapacity;
 
 // Prototypes
-// TODO
 int bv_init(const char *fs_fileName);
 // TODO
 int bv_destroy();
@@ -54,6 +55,7 @@ int bv_read(int bvfs_FD, void *buf, size_t count);
 int bv_unlink(const char* fileName);
 // TODO
 void bv_ls();
+
 
 void debug() {
   for(int i=0; i<256; i++) {
@@ -79,6 +81,7 @@ void debug() {
   }
 }
 
+
 void initGlobals() {
   //read all of the inodes
   inodes = (inode*)malloc(256*sizeof(inode));
@@ -95,16 +98,116 @@ void initGlobals() {
   fdTable = (fileDescriptor*)malloc(8*sizeof(fileDescriptor));
   fdSize = 0;
   fdCapacity = 8;
+  for(int i=0; i<fdCapacity; i++) {
+    fdTable[i].cursor = -1;
+  }
 }
 
 void growfdTable() {
+  //make a new table with a higher capacity
   fdCapacity *= 2;
   fileDescriptor* newTable = (fileDescriptor*)malloc(fdCapacity*sizeof(fileDescriptor));
+
+  //copy data over to the new table
   for(int i=0; i<fdSize; i++) {
     newTable[i] = fdTable[i];
   }
+
+  //populate the rest of the table with empty descriptors
+  for(int i=fdSize; i<fdCapacity; i++) {
+    newTable[i].cursor = -1;
+  }
+
+  //delete the old table and set new new table as the table to use;
   free(fdTable);
   fdTable = newTable;
+}
+
+int getFD() {
+  if(fdSize == fdCapacity) {
+    //grow the table and return the fd at index size
+    growfdTable();
+    fdTable[fdSize].cursor = 0;
+    return fdSize++;
+  }
+  else {
+    //look for the first empty fd
+    for(int i=0; i<fdCapacity; i++) {
+      if(fdTable[i].cursor == -1) {
+        fdTable[i].cursor = 0;
+        fdSize++;
+        return i;
+      }
+    }
+  }
+}
+
+void closeFD(int index) {
+  if(index < 0 || index > fdCapacity) {
+    return;
+  }
+  else if(fdTable[index].cursor != -1) {
+    fdTable[index].cursor = -1;
+    fdSize--;
+  }
+}
+
+
+short getBlock() {
+  int retBlock = freeNode;
+
+  //0 means that there is no more free blocks
+  //if we're at 0:
+  //  we want to return 0
+  //  we don't want to read in whatever garbage is at 0
+  if(freeNode != 0) {
+    //write to the free node
+    lseek(fsFile, freeNode, SEEK_SET);
+    read(fsFile, (void*)&freeNode, sizeof(int));
+
+    //write the new free node to the superblock
+    lseek(fsFile, 256*512, SEEK_SET);
+    write(fsFile,(void*)&freeNode,sizeof(int));
+  }
+
+  return (short)(retBlock/512);
+}
+
+void freeBlock(int index) {
+  //index should be the index of the block.
+  //NOT the offset in the file
+  int fileOffset = index*512;
+
+  //set the new free node up at its offset
+  lseek(fsFile, fileOffset, SEEK_SET);
+  write(fsFile, (void*)&freeNode, sizeof(int));
+  freeNode = fileOffset;
+
+  //set the new freeNode in the superBlock
+  lseek(fsFile, 256*512, SEEK_SET);
+  write(fsFile, (void*)&freeNode, sizeof(int));
+}
+
+int getNewFile() {
+  int found = 0;
+  int index;
+
+  //look for a free inode
+  for(int i=0; i<256; i++) {
+    if(inodes[i].size == -1) {
+      found = 1;
+      index = i;
+      break;
+    }
+  }
+
+  if(found) {
+    inodes[index].size = 0;
+    return index;
+  }
+  else {
+    return -1;
+  }
 }
 
 
@@ -147,7 +250,7 @@ int bv_init(const char *fs_fileName) {
   else {
     // File did not previously exist but it does now. Write data to it
     inode tempNode;
-    tempNode.size = 0;
+    tempNode.size = -1;
     int lastBlock = 512*16383;
 
     // write empty inodes by setting their size to 0
@@ -196,7 +299,16 @@ int bv_init(const char *fs_fileName) {
  *           returning.
  */
 int bv_destroy() {
+  //write all of the inodes to file
+  for(int i=0; i<256; i++) {
+    lseek(fsFile, i*512, SEEK_SET);
+    write(fsFile, (void*)(inodes+i), sizeof(inode));
+  }
+
+  //close the partition file
   close(fsFile);
+
+  //free the rest of the data
   free(inodes);
   free(fdTable);
   return 0;
@@ -236,6 +348,60 @@ int BV_WTRUNC = 2;
  *           stderr prior to returning.
  */
 int bv_open(const char *fileName, int mode) {
+  //deal with long file names
+  if(strlen(fileName) > 31) {
+    fprintf(stderr,"file name '%s' too long for open\n", fileName);
+    return -1;
+  }
+  else if(mode < 0 || mode > 2) {
+    fprintf(stderr,"invalid mode for open\n");
+    return -1;
+  }
+
+  int found = 0;
+  int inodeIndex;
+  for(int i=0; i<256; i++) {
+    if(strcmp(inodes[i].filename, fileName) == 0 && inodes[i].size != -1) {
+      found = 1;
+      inodeIndex = i;
+      break;
+    }
+  }
+
+  if(found) {
+    //open up a file descriptor and set the relevant info in it
+    int fd = getFD();
+    fdTable[fd].file = inodes+inodeIndex;
+    fdTable[fd].mode = mode;
+
+    //if the file is truncated, we delete the old one and get a new one
+    if(mode == BV_WTRUNC) {
+      if(bv_unlink(fileName) == -1) {
+        closeFD(fd);
+        fprintf(stderr, "file '%s' could not be overwritten\n", fileName);
+        return -1;
+      }
+      fdTable[fd].file = inodes+getNewFile();
+      strcpy(fdTable[fd].file->filename, fileName);
+    }
+    else if(mode == BV_WCONCAT) {
+      //set the cursor to the proper location
+      fdTable[fd].cursor = fdTable[fd].file->size;
+    }
+    return fd;
+  }
+  else if(mode == BV_RDONLY) {
+    fprintf(stderr, "file '%s' does not exist for reading\n", fileName);
+    return -1;
+  }
+  else {
+    int fd = getFD();
+    int inodeID = getNewFile();
+    fdTable[fd].file = inodes+inodeID;
+    fdTable[fd].mode = mode;
+    strcpy(fdTable[fd].file->filename, fileName);
+    return fd;
+  }
 }
 
 
@@ -261,6 +427,9 @@ int bv_open(const char *fileName, int mode) {
  *           prior to returning.
  */
 int bv_close(int bvfs_FD) {
+  //TODO look for the file in the file descriptors page
+  //TODO see if the file has been written to at all (size of inode != -1)
+  //TODO remove from file descriptor table
 }
 
 
@@ -336,6 +505,44 @@ int bv_read(int bvfs_FD, void *buf, size_t count) {
  *           Also, print a meaningful error to stderr prior to returning.
  */
 int bv_unlink(const char* fileName) {
+  //TODO handle if a file descriptor is still open when they try to unlink
+  //deal with long file names
+  if(strlen(fileName) > 31) {
+    fprintf(stderr,"file name '%s' too long for open\n", fileName);
+    return -1;
+  }
+
+  int found = 0;
+  int inodeIndex;
+  for(int i=0; i<256; i++) {
+    if(strcmp(inodes[i].filename, fileName) == 0 && inodes[i].size != -1) {
+      found = 1;
+      inodeIndex = i;
+      break;
+    }
+  }
+
+  if(found) {
+    //find the number of blocks
+    int numBlocks = (inodes[inodeIndex].size/512)+1;
+    if(inodes[inodeIndex].size%512 == 0) {
+      numBlocks--;
+    }
+
+    //free the blocks
+    for(int i=0; i<numBlocks; i++) {
+      freeBlock(inodes[inodeIndex].references[i]);
+    }
+
+    //set the size to -1
+    inodes[inodeIndex].size = -1;
+
+    return 0;
+  }
+  else {
+    fprintf(stderr,"file name '%s' does not exist\n", fileName);
+    return -1;
+  }
 }
 
 
