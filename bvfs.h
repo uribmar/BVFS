@@ -142,13 +142,17 @@ int getFD() {
   }
 }
 
-void closeFD(int index) {
+int closeFD(int index) {
   if(index < 0 || index > fdCapacity) {
-    return;
+    return -2;
   }
   else if(fdTable[index].cursor != -1) {
     fdTable[index].cursor = -1;
     fdSize--;
+    return 0;
+  }
+  else {
+    return -1;
   }
 }
 
@@ -427,9 +431,14 @@ int bv_open(const char *fileName, int mode) {
  *           prior to returning.
  */
 int bv_close(int bvfs_FD) {
-  //TODO look for the file in the file descriptors page
-  //TODO see if the file has been written to at all (size of inode != -1)
-  //TODO remove from file descriptor table
+  int result = closeFD(bvfs_FD);
+  if(result == 0)
+    return 0;
+  else if(result == -1)
+    fprintf(stderr, "File Descriptor %d has not been openned", bvfs_FD);
+  else
+    fprintf(stderr, "File Descriptor %d is invalid", bvfs_FD);
+  return -1;
 }
 
 
