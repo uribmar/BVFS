@@ -435,9 +435,9 @@ int bv_close(int bvfs_FD) {
   if(result == 0)
     return 0;
   else if(result == -1)
-    fprintf(stderr, "File Descriptor %d has not been openned", bvfs_FD);
+    fprintf(stderr, "File Descriptor %d has not been openned\n", bvfs_FD);
   else
-    fprintf(stderr, "File Descriptor %d is invalid", bvfs_FD);
+    fprintf(stderr, "File Descriptor %d is invalid\n", bvfs_FD);
   return -1;
 }
 
@@ -490,6 +490,52 @@ int bv_write(int bvfs_FD, const void *buf, size_t count) {
  *           prior to returning.
  */
 int bv_read(int bvfs_FD, void *buf, size_t count) {
+  fileDescriptor* fd = fdTable+bvfs_FD;
+  if(bvfs_FD >= fdCapacity) {
+    fprintf(stderr, "File Descriptor %d is invalid\n", bvfs_FD);
+    return -1;
+  }
+  if(fd->cursor == -1 ) {
+    fprintf(stderr, "File Descriptor %d has not been openned\n", bvfs_FD);
+    return -1;
+  }
+  else if(fd->mode != BV_RDONLY) {
+    fprintf(stderr, "File Descriptor %d has not been openned in read mode\n", bvfs_FD);
+    return -1;
+  }
+  else if(fd->cursor+count > fd->file->size) {
+    fprintf(stderr, "This read request would go past the file size\n", bvfs_FD);
+    return -1;
+  }
+
+  int bytesRead = 0;
+  int bytesLeftToRead = count;
+  int bufIndex = 0;
+
+
+  while(bytesLeftToRead != 0) {
+    int bytesLeftInBlock = 512 - (fd->cursor%512);
+    int currBlockRef = fd->cursor/512;
+    int bytesToRead  = bytesLeftToRead;
+
+    //check if we have a block there to read from
+
+    if(bytesToRead > 512)
+      bytesToRead = 512;
+    if(bytesToRead > bytesLeftInBlock)
+      bytesToRead = bytesLeftInBlock;
+
+    //move to position and read
+    int offset = fd->file->references[currBlockRef]*512;
+    lseek(fsFile, offset, SEEK_SET);
+    read(fsFile, buf+bytesRead, bytesToRead);
+
+    //add to count
+    fd->cursor += bytesToRead;
+    bytesRead += bytesToRead;
+    bytesLeftToRead -=bytesToRead;
+  }
+  return bytesRead;
 }
 
 
