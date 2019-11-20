@@ -1,12 +1,12 @@
 CXX=g++ -std=c++17 -g -w -fmax-errors=1 -m32
 
-bvfs_tester: bvfs_tester.cpp bvfs.h
-	${CXX} bvfs_tester.cpp -o bvfs_tester
+bvfs_tester: tester.cpp bvfs.h
+	${CXX} tester.cpp -o tester.out
 
 run: bvfs_tester
-	./bvfs_tester
+	./tester.out
 
 
 clean:
 	@echo "Cleaning..."
-	rm -f bvfs_tester
+	rm -f tester.out
