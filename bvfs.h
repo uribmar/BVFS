@@ -382,7 +382,7 @@ int bv_open(const char *fileName, int mode) {
         return -1;
       }
       fdTable[fd].file = inodes+getNewFile();
-      //TODO set fileName
+      strcpy(fdTable[fd].file->filename, fileName);
     }
     else if(mode == BV_WCONCAT) {
       //set the cursor to the proper location
@@ -399,7 +399,7 @@ int bv_open(const char *fileName, int mode) {
     int inodeID = getNewFile();
     fdTable[fd].file = inodes+inodeID;
     fdTable[fd].mode = mode;
-    //TODO set filename
+    strcpy(fdTable[fd].file->filename, fileName);
     return fd;
   }
 }
