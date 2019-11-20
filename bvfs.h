@@ -7,7 +7,7 @@
 #include <string.h>
 #include <fcntl.h>
 
-//TODOneed to deal with timestamps in this whole motherfucker
+//TODO need to deal with timestamps in this whole motherfucker
 
 
 struct inode {
@@ -143,11 +143,10 @@ int getFD() {
 }
 
 fileDescriptor* getFDByID(int ID) {
-  for (int i=0; i<fdCapacity; i++) {
-    if (fdTable[i] == ID)
-      return &fdTable[i];
-  }
-  return NULL;
+  if(ID > fdCapacity || ID < 0)
+    return NULL;
+  else
+    return fdTable+ID;
 }
 
 void closeFD(int index) {
@@ -469,7 +468,7 @@ int bv_write(int bvfs_FD, const void *buf, size_t count) {
   // bigger than the space remaining
   while (blockSizeRemaining < countRemaining) {
     int absolute = fd->cursor/512;
-    absolute = fd->references[absolute]*512 + fd->cursor%512;
+    absolute = fd->file->references[absolute]*512 + fd->cursor%512;
 
     lseek(fsFile, absolute, SEEK_SET); 
     write(fsFile, buf+amountWritten, blockSizeRemaining);
@@ -483,13 +482,13 @@ int bv_write(int bvfs_FD, const void *buf, size_t count) {
 
     // Get another block to write to
     short newBlock = getBlock();
-    fd->references[size/512] = newBlock;
+    fd->file->references[fd->file->size/512] = newBlock;
     fd->file->size += blockSizeRemaining;
   }
   // We need to write the final bytes from the buffer as well
   // just this time they fit
   int absolute = fd->cursor/512;
-  absolute = fd->references[absolute]*512 + fd->cursor%512;
+  absolute = fd->file->references[absolute]*512 + fd->cursor%512;
   lseek(fsFile, absolute, SEEK_SET); 
 
   write(fsFile, buf+amountWritten, countRemaining);
