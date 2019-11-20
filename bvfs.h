@@ -179,6 +179,7 @@ short getBlock() {
     write(fsFile,(void*)&freeNode,sizeof(int));
   }
 
+  //printf("Grabbing block: %d\n", (short)(retBlock/512));
   return (short)(retBlock/512);
 }
 
@@ -485,14 +486,16 @@ int bv_write(int bvfs_FD, const void *buf, size_t count) {
   // Do this while the amount to write is 
   // bigger than the space remaining
   while (blockSizeRemaining < countRemaining) {
-    if(fd->file->size == 0) {
-      //allocate a new block if the file size was 0
+    //printf("file size: %d\n", fd->file->size);
+    if(fd->file->size%512 == 0) {
+      // Get another block to write to
       short newBlock = getBlock();
       if(newBlock == 0) {
         fprintf(stderr, "Cannot allocate new blocks on disk\n");
         return amountWritten;
       }
-      fd->file->references[0] = newBlock;
+
+      fd->file->references[fd->file->size/512] = newBlock;
     }
 
     //find the offsetof the cursor in the file
@@ -514,22 +517,21 @@ int bv_write(int bvfs_FD, const void *buf, size_t count) {
     // set the cursor position in the file descriptor
     fd->cursor += blockSizeRemaining;
     blockSizeRemaining = 512 - (fd->cursor%512);
-
-    if(countRemaining > 0){
-      // Get another block to write to
-      short newBlock = getBlock();
-      if(newBlock == 0) {
-        fprintf(stderr, "Cannot allocate new blocks on disk\n");
-        return amountWritten;
-      }
-
-      fd->file->references[fd->file->size/512] = newBlock;
-    }
   }
   if(countRemaining == 0) {
     return amountWritten;
   }
   else {
+    if(fd->file->size%512 == 0) {
+      //allocate a new block if the file size was 0
+      short newBlock = getBlock();
+      if(newBlock == 0) {
+        fprintf(stderr, "Cannot allocate new blocks on disk\n");
+        return amountWritten;
+      }
+      fd->file->references[0] = newBlock;
+    }
+
     // We need to write the final bytes from the buffer as well
     // just this time they fit
     int absolute = fd->cursor/512;
