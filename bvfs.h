@@ -475,74 +475,45 @@ int bv_write(int bvfs_FD, const void *buf, size_t count) {
     return -1;
   }
 
+  int bytesLeftToWrite = count;
   int amountWritten = 0;
-  int countRemaining = count;
-  int blockSizeRemaining = 512 - fd->cursor%512;
 
-
-  // Write the remaining size of the block
-  // subtract it from the count remaining
-  //
-  // Do this while the amount to write is 
-  // bigger than the space remaining
-  while (blockSizeRemaining < countRemaining) {
-    //printf("file size: %d\n", fd->file->size);
+  while(bytesLeftToWrite != 0) {
+    //get new block if we have to
     if(fd->file->size%512 == 0) {
-      // Get another block to write to
       short newBlock = getBlock();
       if(newBlock == 0) {
         fprintf(stderr, "Cannot allocate new blocks on disk\n");
         return amountWritten;
       }
-
       fd->file->references[fd->file->size/512] = newBlock;
     }
 
-    //find the offsetof the cursor in the file
-    int absolute = fd->cursor/512;
-    absolute = (fd->file->references[absolute]*512) + (fd->cursor%512);
+    //identify and seek to write location
+    int currBlockRef = fd->cursor/512;
+    int offset = fd->file->references[currBlockRef]*512 + fd->cursor%512;
 
-    //seek to that position
-    //write the size of the block
-    lseek(fsFile, absolute, SEEK_SET); 
-    write(fsFile, buf+amountWritten, blockSizeRemaining);
-
-    //reduce the remaining count and increase the number of bytes we wrote
-    amountWritten += blockSizeRemaining;
-    countRemaining -= blockSizeRemaining;
-
-    //increase the size of the file in the inode
-    fd->file->size += blockSizeRemaining;
-
-    // set the cursor position in the file descriptor
-    fd->cursor += blockSizeRemaining;
-    blockSizeRemaining = 512 - (fd->cursor%512);
-  }
-  if(countRemaining == 0) {
-    return amountWritten;
-  }
-  else {
-    if(fd->file->size%512 == 0) {
-      //allocate a new block if the file size was 0
-      short newBlock = getBlock();
-      if(newBlock == 0) {
-        fprintf(stderr, "Cannot allocate new blocks on disk\n");
-        return amountWritten;
-      }
-      fd->file->references[0] = newBlock;
+    int bytesLeftInBlock = 512 - (fd->cursor%512);
+    int bytesToWrite;
+    if(bytesLeftToWrite < bytesLeftInBlock) {
+      bytesToWrite = bytesLeftToWrite;
+    }
+    else {
+      bytesToWrite = bytesLeftInBlock;
     }
 
-    // We need to write the final bytes from the buffer as well
-    // just this time they fit
-    int absolute = fd->cursor/512;
-    absolute = fd->file->references[absolute]*512 + fd->cursor%512;
-    lseek(fsFile, absolute, SEEK_SET); 
+    //seek and write
+    lseek(fsFile, offset, SEEK_SET); 
+    write(fsFile, buf+amountWritten, bytesToWrite);
 
-    write(fsFile, buf+amountWritten, countRemaining);
-    fd->cursor += countRemaining;
-    fd->file->size += countRemaining;
-    return amountWritten + countRemaining;
+    //adjust numbers accordingly
+    fd->file->size += bytesToWrite;
+    fd->cursor += bytesToWrite;
+    bytesLeftToWrite -= bytesToWrite;
+    amountWritten += bytesToWrite;
   }
+
+  return amountWritten;
 }
 
 
@@ -588,26 +559,27 @@ int bv_read(int bvfs_FD, void *buf, size_t count) {
 
 
   while(bytesLeftToRead != 0) {
-    int bytesLeftInBlock = 512 - (fd->cursor%512);
+    //identify location to read from
     int currBlockRef = fd->cursor/512;
-    int bytesToRead  = bytesLeftToRead;
+    int offset = fd->file->references[currBlockRef]*512 + fd->cursor%512;
 
-    //check if we have a block there to read from
-
-    if(bytesToRead > 512)
-      bytesToRead = 512;
-    if(bytesToRead > bytesLeftInBlock)
+    int bytesLeftInBlock = 512 - (fd->cursor%512);
+    int bytesToRead;
+    if(bytesLeftToRead < bytesLeftInBlock) {
+      bytesToRead = bytesLeftToRead;
+    }
+    else {
       bytesToRead = bytesLeftInBlock;
+    }
 
     //move to position and read
-    int offset = fd->file->references[currBlockRef]*512 + fd->cursor%512;
     lseek(fsFile, offset, SEEK_SET);
     read(fsFile, buf+bytesRead, bytesToRead);
 
     //add to count
     fd->cursor += bytesToRead;
     bytesRead += bytesToRead;
-    bytesLeftToRead -=bytesToRead;
+    bytesLeftToRead -= bytesToRead;
   }
   return bytesRead;
 }
