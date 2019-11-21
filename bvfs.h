@@ -7,7 +7,7 @@
 #include <string.h>
 #include <fcntl.h>
 
-//TODOneed to deal with timestamps in this whole motherfucker
+//TODO need to deal with timestamps in this whole motherfucker
 
 
 struct inode {
@@ -43,9 +43,7 @@ int fdCapacity;
 int bv_init(const char *fs_fileName);
 // TODO
 int bv_destroy();
-// TODO
 int bv_open(const char *fileName, int mode);
-// TODO
 int bv_close(int bvfs_FD);
 // TODO
 int bv_write(int bvfs_FD, const void *buf, size_t count);
@@ -142,13 +140,24 @@ int getFD() {
   }
 }
 
-void closeFD(int index) {
+fileDescriptor* getFDByID(int ID) {
+  if(ID > fdCapacity || ID < 0)
+    return NULL;
+  else
+    return fdTable+ID;
+}
+
+int closeFD(int index) {
   if(index < 0 || index > fdCapacity) {
-    return;
+    return -2;
   }
   else if(fdTable[index].cursor != -1) {
     fdTable[index].cursor = -1;
     fdSize--;
+    return 0;
+  }
+  else {
+    return -1;
   }
 }
 
@@ -170,6 +179,7 @@ short getBlock() {
     write(fsFile,(void*)&freeNode,sizeof(int));
   }
 
+  //printf("Grabbing block: %d\n", (short)(retBlock/512));
   return (short)(retBlock/512);
 }
 
@@ -281,10 +291,6 @@ int bv_init(const char *fs_fileName) {
 }
 
 
-
-
-
-
 /*
  * int bv_destroy();
  *
@@ -313,11 +319,6 @@ int bv_destroy() {
   free(fdTable);
   return 0;
 }
-
-
-
-
-
 
 
 // Available Modes for bvfs (see bv_open below)
@@ -406,9 +407,6 @@ int bv_open(const char *fileName, int mode) {
 
 
 
-
-
-
 /*
  * int bv_close(int bvfs_FD);
  *
@@ -427,14 +425,15 @@ int bv_open(const char *fileName, int mode) {
  *           prior to returning.
  */
 int bv_close(int bvfs_FD) {
-  //TODO look for the file in the file descriptors page
-  //TODO see if the file has been written to at all (size of inode != -1)
-  //TODO remove from file descriptor table
+  int result = closeFD(bvfs_FD);
+  if(result == 0)
+    return 0;
+  else if(result == -1)
+    fprintf(stderr, "File Descriptor %d has not been openned\n", bvfs_FD);
+  else
+    fprintf(stderr, "File Descriptor %d is invalid\n", bvfs_FD);
+  return -1;
 }
-
-
-
-
 
 
 
@@ -456,10 +455,66 @@ int bv_close(int bvfs_FD) {
  *           prior to returning.
  */
 int bv_write(int bvfs_FD, const void *buf, size_t count) {
+  fileDescriptor* fd = getFDByID(bvfs_FD);
+
+  //check for fails
+  if(fd == NULL) {
+    fprintf(stderr, "File descriptor %d is invalid\n", bvfs_FD);
+    return -1;
+  }
+  else if(fd->cursor == -1) {
+    fprintf(stderr, "File descriptor %d is not open\n", bvfs_FD);
+    return -1;
+  }
+  else if(fd->mode == BV_RDONLY) {
+    fprintf(stderr, "File descriptor %d is not open in read mode\n", bvfs_FD);
+    return -1;
+  }
+  else if (fd->file->size + count > 128*512) {
+    fprintf(stderr, "file %s attempted to write over the max file size\n", fd->file->filename); 
+    return -1;
+  }
+
+  int bytesLeftToWrite = count;
+  int amountWritten = 0;
+
+  while(bytesLeftToWrite != 0) {
+    //get new block if we have to
+    if(fd->file->size%512 == 0) {
+      short newBlock = getBlock();
+      if(newBlock == 0) {
+        fprintf(stderr, "Cannot allocate new blocks on disk\n");
+        return amountWritten;
+      }
+      fd->file->references[fd->file->size/512] = newBlock;
+    }
+
+    //identify and seek to write location
+    int currBlockRef = fd->cursor/512;
+    int offset = fd->file->references[currBlockRef]*512 + fd->cursor%512;
+
+    int bytesLeftInBlock = 512 - (fd->cursor%512);
+    int bytesToWrite;
+    if(bytesLeftToWrite < bytesLeftInBlock) {
+      bytesToWrite = bytesLeftToWrite;
+    }
+    else {
+      bytesToWrite = bytesLeftInBlock;
+    }
+
+    //seek and write
+    lseek(fsFile, offset, SEEK_SET); 
+    write(fsFile, buf+amountWritten, bytesToWrite);
+
+    //adjust numbers accordingly
+    fd->file->size += bytesToWrite;
+    fd->cursor += bytesToWrite;
+    bytesLeftToWrite -= bytesToWrite;
+    amountWritten += bytesToWrite;
+  }
+
+  return amountWritten;
 }
-
-
-
 
 
 
@@ -481,11 +536,53 @@ int bv_write(int bvfs_FD, const void *buf, size_t count) {
  *           prior to returning.
  */
 int bv_read(int bvfs_FD, void *buf, size_t count) {
+  fileDescriptor* fd = fdTable+bvfs_FD;
+  if(bvfs_FD >= fdCapacity) {
+    fprintf(stderr, "File Descriptor %d is invalid\n", bvfs_FD);
+    return -1;
+  }
+  if(fd->cursor == -1 ) {
+    fprintf(stderr, "File Descriptor %d has not been openned\n", bvfs_FD);
+    return -1;
+  }
+  else if(fd->mode != BV_RDONLY) {
+    fprintf(stderr, "File Descriptor %d has not been openned in read mode\n", bvfs_FD);
+    return -1;
+  }
+  else if(fd->cursor+count > fd->file->size) {
+    fprintf(stderr, "This read request would go past the file size\n", bvfs_FD);
+    return -1;
+  }
+
+  int bytesRead = 0;
+  int bytesLeftToRead = count;
+
+
+  while(bytesLeftToRead != 0) {
+    //identify location to read from
+    int currBlockRef = fd->cursor/512;
+    int offset = fd->file->references[currBlockRef]*512 + fd->cursor%512;
+
+    int bytesLeftInBlock = 512 - (fd->cursor%512);
+    int bytesToRead;
+    if(bytesLeftToRead < bytesLeftInBlock) {
+      bytesToRead = bytesLeftToRead;
+    }
+    else {
+      bytesToRead = bytesLeftInBlock;
+    }
+
+    //move to position and read
+    lseek(fsFile, offset, SEEK_SET);
+    read(fsFile, buf+bytesRead, bytesToRead);
+
+    //add to count
+    fd->cursor += bytesToRead;
+    bytesRead += bytesToRead;
+    bytesLeftToRead -= bytesToRead;
+  }
+  return bytesRead;
 }
-
-
-
-
 
 
 
@@ -544,10 +641,6 @@ int bv_unlink(const char* fileName) {
     return -1;
   }
 }
-
-
-
-
 
 
 
