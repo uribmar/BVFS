@@ -13,7 +13,7 @@
 struct inode {
   int size;
   char filename[32];
-  timeval timestamp;
+  time_t timestamp;
   short references[128];
 } typedef inode;
 
@@ -213,6 +213,7 @@ int getNewFile() {
 
   if(found) {
     inodes[index].size = 0;
+    inodes[index].timestamp = time(NULL);
     return index;
   }
   else {
@@ -484,6 +485,7 @@ int bv_write(int bvfs_FD, const void *buf, size_t count) {
       short newBlock = getBlock();
       if(newBlock == 0) {
         fprintf(stderr, "Cannot allocate new blocks on disk\n");
+        fd->file->timestamp = time(NULL);
         return amountWritten;
       }
       fd->file->references[fd->file->size/512] = newBlock;
@@ -513,6 +515,7 @@ int bv_write(int bvfs_FD, const void *buf, size_t count) {
     amountWritten += bytesToWrite;
   }
 
+  fd->file->timestamp = time(NULL);
   return amountWritten;
 }
 
@@ -671,4 +674,21 @@ int bv_unlink(const char* fileName) {
  *   void
  */
 void bv_ls() {
+  int count = 0;
+  inode f[256];
+  for (int i=0; i<256; i++) {
+    // Grab each inode, check if its size is >= 0
+    inode node = inodes[i];
+
+    if (node.size >= 0) {
+      f[count] = node;
+      count++;
+    }
+  }
+  printf("%d Files\n", count);
+  for (int i=0; i<count; i++) {
+    int blocks = (f[i].size%512==0) ? f[i].size/512 : f[i].size/512 + 1;
+    printf("bytes: %d, blocks: %d, %s, %s\n", f[i].size, blocks, ctime(&(f[i].timestamp)), f[i].filename);
+  }
+
 }
