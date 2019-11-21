@@ -7,7 +7,6 @@
 #include <string.h>
 #include <fcntl.h>
 
-//TODOcheck if we're dealing with the case where there is no free inode when getNewFile is called
 
 struct inode {
   int size;
@@ -386,7 +385,14 @@ int bv_open(const char *fileName, int mode) {
         fprintf(stderr, "file '%s' could not be overwritten\n", fileName);
         return -1;
       }
-      fdTable[fd].file = inodes+getNewFile();
+
+      int inodeID = getNewFile();
+      if(inodeID == -1) {
+        fprintf(stderr, "There was a problem overwriting file '%s'\n", fileName);
+        return -1;
+      }
+
+      fdTable[fd].file = inodes+inodeID;
       strcpy(fdTable[fd].file->filename, fileName);
     }
     else if(mode == BV_WCONCAT) {
@@ -403,6 +409,10 @@ int bv_open(const char *fileName, int mode) {
     //the file is openned in one of the writing modes, but we need to create it
     int fd = getFD();
     int inodeID = getNewFile();
+    if(inodeID == -1) {
+      fprintf(stderr, "Cannot create: You have reached max file capacity\n");
+      return -1;
+    }
 
     //set up the file descriptor properly
     fdTable[fd].file = inodes+inodeID;
