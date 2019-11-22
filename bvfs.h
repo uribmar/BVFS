@@ -374,14 +374,11 @@ int bv_open(const char *fileName, int mode) {
 
   if(found) {
     //open up a file descriptor and set the relevant info in it
-    int fd = getFD();
-    fdTable[fd].file = inodes+inodeIndex;
-    fdTable[fd].mode = mode;
+    int fd;
 
     if(mode == BV_WTRUNC) {
       //if the file is truncated, we delete the old one and get a new one
       if(bv_unlink(fileName) == -1) {
-        closeFD(fd);
         fprintf(stderr, "file '%s' could not be overwritten\n", fileName);
         return -1;
       }
@@ -392,12 +389,23 @@ int bv_open(const char *fileName, int mode) {
         return -1;
       }
 
+      fd = getFD();
+      fdTable[fd].mode = mode;
       fdTable[fd].file = inodes+inodeID;
       strcpy(fdTable[fd].file->filename, fileName);
     }
     else if(mode == BV_WCONCAT) {
+      fd = getFD();
+      fdTable[fd].file = inodes+inodeIndex;
+      fdTable[fd].mode = mode;
+
       //set the cursor to the proper location
       fdTable[fd].cursor = fdTable[fd].file->size;
+    }
+    else {
+      fd = getFD();
+      fdTable[fd].file = inodes+inodeIndex;
+      fdTable[fd].mode = mode;
     }
     return fd;
   }
@@ -627,11 +635,18 @@ int bv_read(int bvfs_FD, void *buf, size_t count) {
  *           Also, print a meaningful error to stderr prior to returning.
  */
 int bv_unlink(const char* fileName) {
-  //TODO handle if a file descriptor is still open when they try to unlink
   //deal with long file names
   if(strlen(fileName) > 31) {
     fprintf(stderr,"file name '%s' too long for open\n", fileName);
     return -1;
+  }
+
+  //look to see if there is an open file descriptor for that node
+  for(int i=0; i<fdCapacity; i++) {
+    if(fdTable[i].cursor != -1 && strcmp(fdTable[i].file->filename, fileName) == 0) {
+      fprintf(stderr,"cannot unlink while the file is open\n", fileName);
+      return -1;
+    }
   }
 
   //find the inode
@@ -712,6 +727,10 @@ void bv_ls() {
   printf("%d Files\n", count);
   for (int i=0; i<count; i++) {
     int blocks = (f[i].size%512==0) ? f[i].size/512 : f[i].size/512 + 1;
-    printf("bytes: %d, blocks: %d, %s, %s\n", f[i].size, blocks, ctime(&(f[i].timestamp)), f[i].filename);
+    printf("bytes: %d, blocks: %d, %s, %s\n",
+        f[i].size,
+        blocks,
+        ctime(&(f[i].timestamp)),
+        f[i].filename);
   }
 }
