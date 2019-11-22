@@ -7,16 +7,13 @@
 #include <string.h>
 #include <fcntl.h>
 
-//TODO need to deal with timestamps in this whole motherfucker
-
 
 struct inode {
   int size;
   char filename[32];
-  timeval timestamp;
+  time_t timestamp;
   short references[128];
 } typedef inode;
-
 
 struct fileDescriptor {
   int cursor;
@@ -41,17 +38,12 @@ int fdCapacity;
 
 // Prototypes
 int bv_init(const char *fs_fileName);
-// TODO
 int bv_destroy();
 int bv_open(const char *fileName, int mode);
 int bv_close(int bvfs_FD);
-// TODO
 int bv_write(int bvfs_FD, const void *buf, size_t count);
-// TODO
 int bv_read(int bvfs_FD, void *buf, size_t count);
-// TODO
 int bv_unlink(const char* fileName);
-// TODO
 void bv_ls();
 
 
@@ -101,6 +93,7 @@ void initGlobals() {
   }
 }
 
+
 void growfdTable() {
   //make a new table with a higher capacity
   fdCapacity *= 2;
@@ -140,6 +133,7 @@ int getFD() {
   }
 }
 
+
 fileDescriptor* getFDByID(int ID) {
   if(ID > fdCapacity || ID < 0)
     return NULL;
@@ -147,16 +141,20 @@ fileDescriptor* getFDByID(int ID) {
     return fdTable+ID;
 }
 
+
 int closeFD(int index) {
   if(index < 0 || index > fdCapacity) {
+    //invalid fd
     return -2;
   }
   else if(fdTable[index].cursor != -1) {
+    //close the fd
     fdTable[index].cursor = -1;
     fdSize--;
     return 0;
   }
   else {
+    //the fd was never open
     return -1;
   }
 }
@@ -183,6 +181,7 @@ short getBlock() {
   return (short)(retBlock/512);
 }
 
+
 void freeBlock(int index) {
   //index should be the index of the block.
   //NOT the offset in the file
@@ -198,6 +197,7 @@ void freeBlock(int index) {
   write(fsFile, (void*)&freeNode, sizeof(int));
 }
 
+
 int getNewFile() {
   int found = 0;
   int index;
@@ -211,11 +211,14 @@ int getNewFile() {
     }
   }
 
+  //return the address of the inode
   if(found) {
     inodes[index].size = 0;
+    inodes[index].timestamp = time(NULL);
     return index;
   }
   else {
+    //there is no free inode
     return -1;
   }
 }
@@ -349,7 +352,6 @@ int BV_WTRUNC = 2;
  *           stderr prior to returning.
  */
 int bv_open(const char *fileName, int mode) {
-  //deal with long file names
   if(strlen(fileName) > 31) {
     fprintf(stderr,"file name '%s' too long for open\n", fileName);
     return -1;
@@ -359,6 +361,7 @@ int bv_open(const char *fileName, int mode) {
     return -1;
   }
 
+  //search to find if the file exists
   int found = 0;
   int inodeIndex;
   for(int i=0; i<256; i++) {
@@ -371,23 +374,38 @@ int bv_open(const char *fileName, int mode) {
 
   if(found) {
     //open up a file descriptor and set the relevant info in it
-    int fd = getFD();
-    fdTable[fd].file = inodes+inodeIndex;
-    fdTable[fd].mode = mode;
+    int fd;
 
-    //if the file is truncated, we delete the old one and get a new one
     if(mode == BV_WTRUNC) {
+      //if the file is truncated, we delete the old one and get a new one
       if(bv_unlink(fileName) == -1) {
-        closeFD(fd);
         fprintf(stderr, "file '%s' could not be overwritten\n", fileName);
         return -1;
       }
-      fdTable[fd].file = inodes+getNewFile();
+
+      int inodeID = getNewFile();
+      if(inodeID == -1) {
+        fprintf(stderr, "There was a problem overwriting file '%s'\n", fileName);
+        return -1;
+      }
+
+      fd = getFD();
+      fdTable[fd].mode = mode;
+      fdTable[fd].file = inodes+inodeID;
       strcpy(fdTable[fd].file->filename, fileName);
     }
     else if(mode == BV_WCONCAT) {
+      fd = getFD();
+      fdTable[fd].file = inodes+inodeIndex;
+      fdTable[fd].mode = mode;
+
       //set the cursor to the proper location
       fdTable[fd].cursor = fdTable[fd].file->size;
+    }
+    else {
+      fd = getFD();
+      fdTable[fd].file = inodes+inodeIndex;
+      fdTable[fd].mode = mode;
     }
     return fd;
   }
@@ -396,15 +414,23 @@ int bv_open(const char *fileName, int mode) {
     return -1;
   }
   else {
+    //the file is openned in one of the writing modes, but we need to create it
     int fd = getFD();
     int inodeID = getNewFile();
+    if(inodeID == -1) {
+      fprintf(stderr, "Cannot create: You have reached max file capacity\n");
+      return -1;
+    }
+
+    //set up the file descriptor properly
     fdTable[fd].file = inodes+inodeID;
     fdTable[fd].mode = mode;
+
+    //set the filename in the file and return
     strcpy(fdTable[fd].file->filename, fileName);
     return fd;
   }
 }
-
 
 
 /*
@@ -425,6 +451,8 @@ int bv_open(const char *fileName, int mode) {
  *           prior to returning.
  */
 int bv_close(int bvfs_FD) {
+  //close the fd using the function declared earlier
+  //evaluate the result and print any errors
   int result = closeFD(bvfs_FD);
   if(result == 0)
     return 0;
@@ -434,7 +462,6 @@ int bv_close(int bvfs_FD) {
     fprintf(stderr, "File Descriptor %d is invalid\n", bvfs_FD);
   return -1;
 }
-
 
 
 /*
@@ -484,6 +511,7 @@ int bv_write(int bvfs_FD, const void *buf, size_t count) {
       short newBlock = getBlock();
       if(newBlock == 0) {
         fprintf(stderr, "Cannot allocate new blocks on disk\n");
+        fd->file->timestamp = time(NULL);
         return amountWritten;
       }
       fd->file->references[fd->file->size/512] = newBlock;
@@ -493,6 +521,7 @@ int bv_write(int bvfs_FD, const void *buf, size_t count) {
     int currBlockRef = fd->cursor/512;
     int offset = fd->file->references[currBlockRef]*512 + fd->cursor%512;
 
+    //figure out how many bytes to write
     int bytesLeftInBlock = 512 - (fd->cursor%512);
     int bytesToWrite;
     if(bytesLeftToWrite < bytesLeftInBlock) {
@@ -513,9 +542,10 @@ int bv_write(int bvfs_FD, const void *buf, size_t count) {
     amountWritten += bytesToWrite;
   }
 
+  //update timestamp and return
+  fd->file->timestamp = time(NULL);
   return amountWritten;
 }
-
 
 
 /*
@@ -537,6 +567,8 @@ int bv_write(int bvfs_FD, const void *buf, size_t count) {
  */
 int bv_read(int bvfs_FD, void *buf, size_t count) {
   fileDescriptor* fd = fdTable+bvfs_FD;
+
+  //check for fails
   if(bvfs_FD >= fdCapacity) {
     fprintf(stderr, "File Descriptor %d is invalid\n", bvfs_FD);
     return -1;
@@ -563,6 +595,7 @@ int bv_read(int bvfs_FD, void *buf, size_t count) {
     int currBlockRef = fd->cursor/512;
     int offset = fd->file->references[currBlockRef]*512 + fd->cursor%512;
 
+    //figure out how many bytes to read
     int bytesLeftInBlock = 512 - (fd->cursor%512);
     int bytesToRead;
     if(bytesLeftToRead < bytesLeftInBlock) {
@@ -602,13 +635,21 @@ int bv_read(int bvfs_FD, void *buf, size_t count) {
  *           Also, print a meaningful error to stderr prior to returning.
  */
 int bv_unlink(const char* fileName) {
-  //TODO handle if a file descriptor is still open when they try to unlink
   //deal with long file names
   if(strlen(fileName) > 31) {
     fprintf(stderr,"file name '%s' too long for open\n", fileName);
     return -1;
   }
 
+  //look to see if there is an open file descriptor for that node
+  for(int i=0; i<fdCapacity; i++) {
+    if(fdTable[i].cursor != -1 && strcmp(fdTable[i].file->filename, fileName) == 0) {
+      fprintf(stderr,"cannot unlink while the file is open\n", fileName);
+      return -1;
+    }
+  }
+
+  //find the inode
   int found = 0;
   int inodeIndex;
   for(int i=0; i<256; i++) {
@@ -643,7 +684,6 @@ int bv_unlink(const char* fileName) {
 }
 
 
-
 /*
  * void bv_ls();
  *
@@ -671,4 +711,26 @@ int bv_unlink(const char* fileName) {
  *   void
  */
 void bv_ls() {
+  int count = 0;
+  inode f[256];
+  for (int i=0; i<256; i++) {
+    // Grab each inode, check if its size is >= 0
+    inode node = inodes[i];
+
+    if (node.size >= 0) {
+      f[count] = node;
+      count++;
+    }
+  }
+
+  //print number of files and each file in the array
+  printf("%d Files\n", count);
+  for (int i=0; i<count; i++) {
+    int blocks = (f[i].size%512==0) ? f[i].size/512 : f[i].size/512 + 1;
+    printf("bytes: %d, blocks: %d, %s, %s\n",
+        f[i].size,
+        blocks,
+        ctime(&(f[i].timestamp)),
+        f[i].filename);
+  }
 }
